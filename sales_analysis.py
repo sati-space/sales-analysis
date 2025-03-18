@@ -1,7 +1,8 @@
 import shutil
 import os
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import col, when, to_date, sum as spark_sum, avg, year, first, lit, expr
+from pyspark.sql.types import IntegerType, StringType, DoubleType
+from pyspark.sql.functions import col, when, to_date, sum as spark_sum, avg, year, first, lit, expr, round
 
 
 def initialize_spark():
@@ -14,17 +15,33 @@ def load_data(spark):
             "sales-order-detail-1-.csv",
             header=True,
             inferSchema=True
-        ),
+        )
+        .withColumn("SalesOrderID", col("SalesOrderID").cast(IntegerType()))
+        .withColumn("SalesOrderDetailID", col("SalesOrderDetailID").cast(IntegerType()))
+        .withColumn("ProductID", col("ProductID").cast(IntegerType()))
+        .withColumn("OrderQty", col("OrderQty").cast(IntegerType()))
+        .withColumn("UnitPrice", col("UnitPrice").cast(DoubleType()))
+        .withColumn("UnitPriceDiscount", col("UnitPriceDiscount").cast(DoubleType())),
+
         'raw_sales_order_header': spark.read.csv(
             "sales-order-header-1-.csv",
             header=True,
             inferSchema=True
-        ),
+        )
+        .withColumn("SalesOrderID", col("SalesOrderID").cast(IntegerType()))
+        .withColumn("OrderDate", to_date(col("OrderDate"), "yyyy-MM-dd"))
+        .withColumn("ShipDate", to_date(col("ShipDate"), "yyyy-MM-dd"))
+        .withColumn("Freight", col("Freight").cast(DoubleType())),
+
         'raw_products': spark.read.csv(
             "products-1-.csv",
             header=True,
             inferSchema=True
         )
+        .withColumn("ProductID", col("ProductID").cast(IntegerType()))
+        .withColumn("Color", col("Color").cast(StringType()))
+        .withColumn("ProductCategoryName", col("ProductCategoryName").cast(StringType()))
+        .withColumn("ProductSubCategoryName", col("ProductSubCategoryName").cast(StringType()))
     }
 
 
@@ -65,27 +82,6 @@ def transform_product_master(product_master):
 
 
 def transform_sales_data(sales_order_detail, sales_order_header, product_master):
-    sales_order_header = (
-        sales_order_header
-        .withColumn(
-            "OrderDate",
-            to_date(
-                col("OrderDate"),
-                "yyyy-MM-dd"
-            )
-        )
-    )
-    sales_order_header = (
-        sales_order_header
-        .withColumn(
-            "ShipDate",
-            to_date(
-                col("ShipDate"),
-                "yyyy-MM-dd"
-            )
-        )
-    )
-
     publish_sales = (
         sales_order_detail
         .join(sales_order_header, "SalesOrderID", "inner")
@@ -115,19 +111,15 @@ def transform_sales_data(sales_order_detail, sales_order_header, product_master)
 
 
 def save_data_as_csv(df, file_name):
-    # Identify if the file is `raw_`, `store_`, or `publish_` and create proper folders
     folder = "store/" if file_name.startswith("store_") else \
         "publish/" if file_name.startswith("publish_") else "raw/"
 
-    # Create folder if it doesn't exist
     if not os.path.exists(folder):
         os.makedirs(folder)
 
-    # Temporary path for PySpark CSV output
     temp_path = folder + file_name + "_temp"
     df.coalesce(1).write.csv(temp_path, header=True, mode="overwrite")
 
-    # Identify and rename the actual CSV file
     for file in os.listdir(temp_path):
         if file.startswith("part-") and file.endswith(".csv"):
             shutil.move(os.path.join(temp_path, file), folder + file_name + ".csv")
@@ -145,13 +137,16 @@ def analyze_data(publish_sales):
         revenue_by_color
         .orderBy(col("Year"), col("TotalRevenue").desc())
         .groupBy("Year")
-        .agg(first("Color").alias("TopColor"))
+        .agg(
+            first("Color").alias("TopColor"),
+            first("TotalRevenue").cast("decimal(12,2)").alias("TotalRevenue")
+        )
     )
 
     lead_time_avg = (
         publish_sales.filter(col("ProductCategoryName").isNotNull())
         .groupBy("ProductCategoryName")
-        .agg(avg("LeadTimeInBusinessDays").alias("AvgLeadTime"))
+        .agg(round(avg("LeadTimeInBusinessDays"), 2).alias("AvgLeadTime (Days)"))
     )
 
     most_revenue_color.show()
@@ -163,19 +158,16 @@ def main():
     try:
         data = load_data(spark)
 
-        # Save Raw Data with `raw_` Prefix
         save_data_as_csv(data['raw_products'], "raw_products")
         save_data_as_csv(data['raw_sales_order_detail'], "raw_sales_order_detail")
         save_data_as_csv(data['raw_sales_order_header'], "raw_sales_order_header")
 
-        # Transform Data and Save with `store_` Prefix
         store_sales_order_detail = data['raw_sales_order_detail']
         store_sales_order_header = data['raw_sales_order_header']
 
         save_data_as_csv(store_sales_order_detail, "store_sales_order_detail")
         save_data_as_csv(store_sales_order_header, "store_sales_order_header")
 
-        # Generate `publish_` Tables
         publish_product = transform_product_master(data['raw_products'])
         save_data_as_csv(publish_product, "publish_product")
 

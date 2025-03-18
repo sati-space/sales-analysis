@@ -22,8 +22,8 @@ This project leverages PySpark to:
   - **LeadTimeInBusinessDays** (excluding weekends).
   - **TotalLineExtendedPrice**.
 - Generate insightful reports on:
-  - **Top-selling colors by year**.
-  - **Average lead time by product category**.
+  - **Top-selling colors by year with revenue**.
+  - **Average lead time by product category in days**.
 
 ---
 
@@ -101,31 +101,31 @@ OrderQty * (UnitPrice - UnitPriceDiscount)
 ```
 - Renames `Freight` to `TotalOrderFreight`
 ### Analysis Results
-- Identifies the **Top Revenue-Generating Color** per year
-- Computes the **Average Lead Time by product** category
+- Identifies the **Top Revenue-Generating Color** per year and displays the corresponding Total Revenue
+- Computes the **Average Lead Time by product** category in days
 
 ---
 
 ## Expected Output
 
 ```sql
-+----+--------+
-|Year|TopColor |
-+----+--------+
-|2021|     Red |
-|2022|   Black |
-|2023|   Black |
-|2024|  Yellow |
-+----+--------+
++----+--------+-------------+
+|Year|TopColor| TotalRevenue|
++----+--------+-------------+
+|2021|     Red|   6,019,614.02|
+|2022|   Black|  14,005,242.98|
+|2023|   Black|  15,047,694.37|
+|2024|  Yellow|   6,480,746.07|
++----+--------+-------------+
 
-+-------------------+-----------------+
-|ProductCategoryName | AvgLeadTime     |
-+-------------------+-----------------+
-|Bikes                | 5.82            |
-|Clothing             | 5.83            |
-|Accessories          | 5.83            |
-|Components           | 5.81            |
-+-------------------+-----------------+
++-------------------+------------------+
+|ProductCategoryName | AvgLeadTime (Days)|
++-------------------+------------------+
+|Bikes                | 5.82             |
+|Clothing             | 5.83             |
+|Accessories          | 5.83             |
+|Components           | 5.81             |
++-------------------+------------------+
 ```
 
 ---
